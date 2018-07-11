@@ -64,6 +64,7 @@ app.updateForecastCard = function (data) {
 
     var card = app.visibleCards[data.key];
     if (!card) {
+        // 创建新的 card
         card = app.cardTemplate.cloneNode(true);
         card.classList.remove('cardTemplate');
         card.querySelector('.location').textContent = data.label;
@@ -75,6 +76,7 @@ app.updateForecastCard = function (data) {
     // Verifies the data provide is newer than what's already visible
     // on the card, if it's not bail, if it is, continue and update the
     // time saved in the card
+    // 每次更新卡片时，应用都会在卡片上隐藏的属性中存储数据的时间戳。仅当卡片上已经存在的时间戳晚于传递给函数的数据时，应用才会释放。
     var cardLastUpdatedElem = card.querySelector('.card-last-updated');
     var cardLastUpdated = cardLastUpdatedElem.textContent;
     if (cardLastUpdated) {
@@ -126,10 +128,29 @@ app.updateForecastCard = function (data) {
 */
 app.getForecast = function (key, label) {
     var statement = 'select * from weather.forecast where woeid=' + key;
-    var url = 'https://query.yahooapis.com/v1/public/yql?format=json&q=' +
-        statement;
-    // TODO add cache logic here
+    var url = 'https://query.yahooapis.com/v1/public/yql?format=json&q=' + statement;
 
+    // 天气应用现在会发出两个异步数据请求，一个从 cache 发出，
+    // 一个通过 XHR 发出。如果缓存中有数据，将会返回响应并以极快的速度（几十微秒）渲染，并在 XHR 仍未完成时更新卡片。然后，在 XHR 响应时，将直接使用 weather API 的最新数据更新卡片。
+    // TODO add cache logic here
+    if ('caches' in window) {
+        /*
+         * Check if the service worker has already cached this city's weather
+         * data. If the service worker has the data, then display the cached
+         * data while the app fetches the latest data.
+         */
+        caches.match(url).then(function (response) {
+            if (response) {
+                response.json().then(function updateFromCache(json) {
+                    var results = json.query.results;
+                    results.key = key;
+                    results.label = label;
+                    results.created = json.query.created;
+                    app.updateForecastCard(results);
+                });
+            }
+        });
+    }
     // Fetch the latest data.
     var request = new XMLHttpRequest();
     request.onreadystatechange = function () {
